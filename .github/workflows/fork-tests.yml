@@ -1,0 +1,43 @@
+# Fork-only helper: runs the website checks on GitHub's machines, so nothing has to be installed
+# locally. Lives on the ci-sandbox branch of the fork and is never part of a pull request.
+name: Fork tests
+on:
+  push:
+    branches: [ci-sandbox]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: Asia/Singapore
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # master already has unformatted files, so only the files changed on this branch are checked.
+      - name: Format check (changed files)
+        run: |
+          files=$(git diff --name-only --diff-filter=AM origin/master...HEAD -- website/src)
+          echo "$files"
+          # Format them and print the diff, so the needed changes show in the log.
+          if [ -n "$files" ]; then pnpm exec oxfmt $files && git diff --exit-code -- $files; fi
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        working-directory: website
+        run: pnpm typecheck
+      - name: Lint
+        if: ${{ !cancelled() }}
+        working-directory: website
+        run: pnpm lint
+      - name: Tests
+        if: ${{ !cancelled() }}
+        working-directory: website
+        run: pnpm test
